@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Flora — your plant, in conversation</title>
+<meta name="description" content="Flora is a conversational AI plant companion: scan your plant, get a living diagnosis, and fast-forward its growth." />
+<style>
+  html,body{margin:0;padding:0;background:#0a120d;}
+  #root{min-height:100vh;}
+</style>
+<!-- React + Babel via CDN: no build step needed -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+
+/* ============================================================
+   FLORA — your plant, in conversation.
+   Premium, conversational AI plant-companion prototype.
+   Flow: typed greeting → camera scan → living analysis bubbles
+   → care verdict → how it likes to live → the family → AR growth.
+   Signature: the growth timeline — scrub through time and watch
+   the plant morph, days to years, like an AR time-lapse.
+   ============================================================ */
+
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400&family=Manrope:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500&display=swap');
+
+.flora *{box-sizing:border-box;margin:0;padding:0;}
+.flora{
+  --night:#0E1A14; --night-2:#14261C;
+  --glow:#8FE6B4; --glow-2:#B7F0CE; --mist:#C7E8D3;
+  --paper:#FAF6EE; --paper-2:#F0EADD;
+  --ink:#1B2A20; --ink-soft:#5C6B5E;
+  --peach:#F0C398; --clay:#C97B54;
+  --line:#DED8C9;
+  font-family:'Manrope',system-ui,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased;
+}
+.flora .ser{font-family:'Fraunces',serif;font-weight:400;}
+.flora .mono{font-family:'Spline Sans Mono',monospace;letter-spacing:.02em;}
+
+.stage{min-height:100vh;background:#0a120d;padding:24px 16px 56px;display:flex;flex-direction:column;align-items:center;gap:20px;}
+.toolbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:center;}
+.toolbar .bm{font-family:'Fraunces',serif;font-style:italic;font-size:19px;color:var(--glow-2);display:flex;align-items:center;gap:9px;}
+.toolbar .bm b{font-style:normal;font-family:'Spline Sans Mono',monospace;font-weight:500;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#0a120d;background:var(--glow);padding:3px 9px;border-radius:99px;}
+.seg{display:inline-flex;border:1px solid rgba(143,230,180,.35);border-radius:99px;overflow:hidden;background:rgba(143,230,180,.06);}
+.seg button{font-family:'Spline Sans Mono',monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:8px 15px;background:transparent;border:none;cursor:pointer;color:var(--mist);}
+.seg button.on{background:var(--glow);color:#0a120d;}
+
+.phone{width:390px;max-width:100%;border:1px solid rgba(143,230,180,.25);border-radius:40px;background:#0a120d;padding:11px;box-shadow:0 30px 70px -30px rgba(0,0,0,.9);}
+.phone .notch{height:20px;display:flex;justify-content:center;align-items:center;}
+.phone .notch::before{content:"";width:82px;height:5px;border-radius:99px;background:rgba(199,232,211,.3);}
+.phone .screen{border-radius:30px;overflow:hidden;background:var(--night);height:722px;overflow-y:auto;position:relative;}
+.web{width:100%;max-width:1040px;border:1px solid rgba(143,230,180,.25);border-radius:16px;overflow:hidden;background:var(--night);box-shadow:0 30px 70px -30px rgba(0,0,0,.9);}
+.web .bar{display:flex;align-items:center;gap:8px;padding:12px 18px;background:#0b1712;border-bottom:1px solid rgba(143,230,180,.15);}
+.web .bar .dot{width:11px;height:11px;border-radius:50%;background:rgba(199,232,211,.25);}
+.web .bar .url{margin-left:8px;flex:1;font-family:'Spline Sans Mono',monospace;font-size:12px;color:var(--mist);background:rgba(143,230,180,.06);border:1px solid rgba(143,230,180,.18);border-radius:99px;padding:5px 14px;}
+.web .screen{height:770px;overflow-y:auto;position:relative;}
+
+/* ---------- dark surfaces (greet + scan) ---------- */
+.dark{background:var(--night);color:var(--mist);min-height:100%;position:relative;overflow:hidden;}
+.aurora{position:absolute;inset:0;pointer-events:none;filter:blur(48px);opacity:.65;}
+.aurora i{position:absolute;border-radius:50%;}
+.aurora i:nth-child(1){width:280px;height:280px;background:#2f7d55;top:-40px;left:-60px;animation:drift 14s ease-in-out infinite;}
+.aurora i:nth-child(2){width:240px;height:240px;background:#1d5c6b;bottom:-30px;right:-40px;animation:drift 18s ease-in-out infinite reverse;}
+.aurora i:nth-child(3){width:200px;height:200px;background:#7a8f3e;top:40%;left:40%;animation:drift 22s ease-in-out infinite;}
+
+.greet{position:relative;z-index:2;padding:64px 26px;min-height:100%;display:flex;flex-direction:column;justify-content:center;}
+.web .greet{padding:90px 70px;}
+.greet .time{font-family:'Spline Sans Mono',monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--glow);margin-bottom:20px;}
+.greet h1{font-family:'Fraunces',serif;font-weight:400;font-size:34px;line-height:1.14;color:#EAF7EE;min-height:3.4em;}
+.web .greet h1{font-size:48px;min-height:2.6em;}
+.greet h1 .em{font-style:italic;color:var(--glow-2);}
+.caret{display:inline-block;width:2px;height:1em;background:var(--glow);vertical-align:-2px;margin-left:2px;animation:blink 1s steps(1) infinite;}
+.greet .cta-row{margin-top:34px;display:flex;gap:12px;flex-wrap:wrap;opacity:0;transform:translateY(10px);transition:.6s;}
+.greet .cta-row.show{opacity:1;transform:none;}
+
+.btn{font-family:'Manrope';font-weight:600;font-size:15px;border:none;border-radius:99px;padding:14px 24px;cursor:pointer;display:inline-flex;align-items:center;gap:9px;transition:.18s;}
+.btn.glow{background:var(--glow);color:#0a120d;box-shadow:0 0 0 0 rgba(143,230,180,.5);}
+.btn.glow:hover{box-shadow:0 8px 30px -8px rgba(143,230,180,.7);transform:translateY(-1px);}
+.btn.ghost-d{background:transparent;color:var(--mist);border:1px solid rgba(199,232,211,.4);}
+.btn.ghost-d:hover{background:rgba(143,230,180,.1);}
+.btn.dark{background:var(--ink);color:var(--paper);}
+.btn.dark:hover{background:#0f1c14;}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+
+/* ---------- viewfinder / scan ---------- */
+.view{position:relative;z-index:2;padding:20px;min-height:100%;display:flex;flex-direction:column;}
+.finder{position:relative;flex:1;border-radius:24px;overflow:hidden;background:radial-gradient(120% 90% at 50% 35%, #17352a 0%, #0c1a13 75%);min-height:420px;display:flex;align-items:center;justify-content:center;}
+.web .finder{min-height:520px;}
+.corners span{position:absolute;width:26px;height:26px;border:2px solid var(--glow);opacity:.9;}
+.corners span:nth-child(1){top:16px;left:16px;border-right:none;border-bottom:none;border-radius:6px 0 0 0;}
+.corners span:nth-child(2){top:16px;right:16px;border-left:none;border-bottom:none;border-radius:0 6px 0 0;}
+.corners span:nth-child(3){bottom:16px;left:16px;border-right:none;border-top:none;border-radius:0 0 0 6px;}
+.corners span:nth-child(4){bottom:16px;right:16px;border-left:none;border-top:none;border-radius:0 0 6px 0;}
+.scanline{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--glow),transparent);box-shadow:0 0 18px 3px rgba(143,230,180,.6);animation:scan 2.1s ease-in-out infinite;}
+.hud{position:absolute;left:16px;bottom:16px;font-family:'Spline Sans Mono',monospace;font-size:11px;letter-spacing:.05em;color:var(--glow-2);background:rgba(10,18,13,.6);border:1px solid rgba(143,230,180,.3);border-radius:99px;padding:6px 12px;backdrop-filter:blur(4px);}
+.finder .hint{position:absolute;top:18px;left:50%;transform:translateX(-50%);font-family:'Spline Sans Mono',monospace;font-size:11px;color:var(--mist);letter-spacing:.05em;opacity:.8;}
+
+/* analysis bubbles */
+.bub{position:absolute;z-index:4;background:rgba(10,18,13,.82);border:1px solid rgba(143,230,180,.4);border-radius:14px;padding:9px 12px;backdrop-filter:blur(6px);max-width:180px;animation:bloom .5s cubic-bezier(.2,1.3,.4,1) both;}
+.bub .p{font-family:'Spline Sans Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--glow);margin-bottom:2px;}
+.bub .r{font-size:12.5px;color:#EAF7EE;font-weight:500;line-height:1.25;}
+.bub.warn{border-color:rgba(240,195,152,.6);}
+.bub.warn .p{color:var(--peach);}
+.dotpin{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--glow);box-shadow:0 0 10px 2px rgba(143,230,180,.7);z-index:3;}
+.dotpin.warn{background:var(--peach);box-shadow:0 0 10px 2px rgba(240,195,152,.7);}
+
+.idcard{margin-top:14px;background:rgba(143,230,180,.08);border:1px solid rgba(143,230,180,.25);border-radius:18px;padding:16px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.idcard .nm{font-family:'Fraunces',serif;font-size:22px;color:#EAF7EE;}
+.idcard .bn{font-family:'Fraunces',serif;font-style:italic;font-size:13px;color:var(--mist);}
+.idcard .cf{text-align:right;}
+.idcard .cf .n{font-family:'Fraunces',serif;font-size:26px;color:var(--glow-2);}
+.idcard .cf .l{font-family:'Spline Sans Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--mist);}
+
+/* typed assistant line */
+.assist{display:flex;gap:11px;align-items:flex-start;margin:20px 0 6px;}
+.orb{width:26px;height:26px;border-radius:50%;flex:none;margin-top:2px;background:radial-gradient(circle at 35% 30%, var(--glow-2), #2f7d55);box-shadow:0 0 14px rgba(143,230,180,.6);animation:pulse 2.6s ease-in-out infinite;}
+.assist .msg{font-family:'Fraunces',serif;font-size:17px;line-height:1.35;color:#EAF7EE;}
+.web .assist .msg{font-size:19px;}
+
+/* ---------- light reading surface ---------- */
+.read{background:var(--paper);color:var(--ink);}
+.pad{padding:30px 22px;}
+.web .pad{padding:46px 60px;}
+.kicker{font-family:'Spline Sans Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:#3f7a54;}
+.h2{font-family:'Fraunces',serif;font-weight:400;font-size:27px;line-height:1.1;margin:8px 0 4px;}
+.web .h2{font-size:32px;}
+.lead{color:var(--ink-soft);font-size:15px;line-height:1.6;}
+
+.verdict{border-radius:20px;padding:20px 22px;margin-bottom:8px;}
+.verdict.good{background:linear-gradient(180deg,#EDF7EE,#E4F1E4);border:1px solid #CBE3CE;}
+.verdict.care{background:linear-gradient(180deg,#FBF1E6,#F6E9D8);border:1px solid #EAD8BF;}
+.verdict .tag{font-family:'Spline Sans Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:5px 11px;border-radius:99px;display:inline-block;}
+.verdict.good .tag{background:#3f7a54;color:#fff;}
+.verdict.care .tag{background:var(--clay);color:#fff;}
+.verdict h3{font-family:'Fraunces',serif;font-weight:400;font-size:22px;margin:10px 0 6px;}
+.verdict p{font-size:14.5px;color:var(--ink-soft);line-height:1.55;}
+.fix{list-style:none;margin-top:12px;}
+.fix li{display:flex;gap:11px;padding:9px 0;border-top:1px solid rgba(201,123,84,.25);font-size:14px;}
+.fix li .n{font-family:'Spline Sans Mono',monospace;font-size:11px;color:var(--clay);margin-top:2px;}
+
+/* habits */
+.habits{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;}
+.web .habits{grid-template-columns:repeat(4,1fr);}
+.hcard{border:1px solid var(--line);border-radius:16px;padding:15px;background:#fff;}
+.hcard .e{font-size:22px;}
+.hcard .k{font-family:'Spline Sans Mono',monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:#3f7a54;margin-top:7px;}
+.hcard .v{font-family:'Fraunces',serif;font-size:17px;margin-top:2px;line-height:1.15;}
+.hcard .d{font-size:11.5px;color:var(--ink-soft);margin-top:3px;}
+
+/* family carousel */
+.fam{display:flex;gap:14px;overflow-x:auto;padding:16px 2px 8px;scroll-snap-type:x mandatory;}
+.fam::-webkit-scrollbar{height:6px;}
+.fam::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px;}
+.fcard{scroll-snap-align:start;flex:none;width:190px;border:1px solid var(--line);border-radius:18px;background:#fff;overflow:hidden;}
+.fcard .top{height:120px;background:radial-gradient(90% 80% at 50% 30%,#EAF3E7,#DCEBD9);display:flex;align-items:center;justify-content:center;}
+.fcard .info{padding:13px 14px;}
+.fcard .cn{font-family:'Fraunces',serif;font-size:17px;}
+.fcard .bn{font-family:'Fraunces',serif;font-style:italic;font-size:12px;color:var(--ink-soft);}
+.fcard .tagline{font-size:12px;color:var(--ink-soft);margin-top:6px;}
+
+/* growth timeline */
+.grow{background:var(--night);color:var(--mist);border-radius:24px;overflow:hidden;position:relative;margin-top:8px;}
+.grow .gstage{height:300px;position:relative;background:radial-gradient(120% 90% at 50% 20%,#17352a,#0c1a13);display:flex;align-items:flex-end;justify-content:center;}
+.web .grow .gstage{height:360px;}
+.grow .arhint{position:absolute;top:14px;left:14px;font-family:'Spline Sans Mono',monospace;font-size:10px;letter-spacing:.08em;color:var(--glow-2);border:1px solid rgba(143,230,180,.3);border-radius:99px;padding:5px 11px;background:rgba(10,18,13,.5);}
+.grow .agebadge{position:absolute;top:14px;right:14px;font-family:'Fraunces',serif;font-size:20px;color:#EAF7EE;}
+.grow .ctrl{padding:18px 20px 22px;}
+.grow .ticks{display:flex;justify-content:space-between;font-family:'Spline Sans Mono',monospace;font-size:10px;letter-spacing:.04em;color:var(--mist);margin-bottom:10px;}
+.grow .ticks b{color:var(--glow);font-weight:500;}
+.rng{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:99px;background:rgba(143,230,180,.25);outline:none;}
+.rng::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--glow);cursor:pointer;box-shadow:0 0 14px rgba(143,230,180,.7);border:3px solid #0a120d;}
+.rng::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:var(--glow);cursor:pointer;border:3px solid #0a120d;}
+
+.foot{font-family:'Spline Sans Mono',monospace;font-size:10px;letter-spacing:.04em;color:var(--ink-soft);text-align:center;padding:24px;}
+.back{font-family:'Spline Sans Mono',monospace;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);background:none;border:none;cursor:pointer;display:inline-flex;gap:6px;}
+.back.d{color:var(--mist);}
+
+@keyframes blink{50%{opacity:0;}}
+@keyframes drift{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(24px,-18px) scale(1.12);}}
+@keyframes scan{0%{top:8%;}50%{top:88%;}100%{top:8%;}}
+@keyframes bloom{from{opacity:0;transform:scale(.7);}to{opacity:1;transform:scale(1);}}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:.9;}50%{transform:scale(1.12);opacity:1;}}
+@media (prefers-reduced-motion:reduce){.aurora i,.scanline,.orb{animation:none;}}
+`;
+
+/* ---------- growth-aware plant illustration ---------- */
+function Plant({ growth = 0.5, flower = false, glow = false }) {
+  // leaves defined with an appear-threshold and target geometry
+  const leaves = [
+    { at: 0.0, x: -1, len: 30, ang: -12 },
+    { at: 0.0, x: 1, len: 30, ang: 12 },
+    { at: 0.18, x: -1, len: 42, ang: -34 },
+    { at: 0.18, x: 1, len: 42, ang: 34 },
+    { at: 0.42, x: -1, len: 54, ang: -55 },
+    { at: 0.42, x: 1, len: 54, ang: 55 },
+    { at: 0.66, x: -1, len: 60, ang: -78 },
+    { at: 0.66, x: 1, len: 60, ang: 78 },
+    { at: 0.85, x: 0, len: 66, ang: 0 },
+  ];
+  const stemH = 22 + growth * 120;
+  const potY = 250;
+  const baseY = potY - 6;
+  const topY = baseY - stemH;
+  const showFlower = flower && growth > 0.82;
+  return (
+    <svg viewBox="0 0 200 270" width="100%" style={{ maxHeight: 300, display: "block" }}>
+      <defs>
+        <linearGradient id="lf" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#7BD79A" /><stop offset="1" stopColor="#3F9E63" />
+        </linearGradient>
+        {glow && <filter id="gl"><feGaussianBlur stdDeviation="2.4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>}
+      </defs>
+      {/* soft ground shadow */}
+      <ellipse cx="100" cy="262" rx={30 + growth * 22} ry="6" fill="#000" opacity="0.18" />
+      {/* pot */}
+      <path d="M74 250 L126 250 L120 264 C120 267 117 268 114 268 L86 268 C83 268 80 267 80 264 Z" fill="#E9DFcc" stroke="#B9A98a" strokeWidth="1.5" opacity="0.95" />
+      <rect x="70" y="243" width="60" height="9" rx="3" fill="#D8CBB2" stroke="#B9A98a" strokeWidth="1.2" />
+      {/* stem */}
+      <path d={`M100 ${baseY} L100 ${topY}`} stroke="#3F9E63" strokeWidth={2.4 + growth * 1.6} strokeLinecap="round" filter={glow ? "url(#gl)" : undefined} />
+      {/* leaves */}
+      {leaves.map((lf, i) => {
+        const p = Math.max(0, Math.min(1, (growth - lf.at) / 0.16));
+        if (p <= 0) return null;
+        const anchorY = topY + (i < 2 ? 6 : (i / leaves.length) * stemH * 0.5);
+        const L = lf.len * p;
+        const rad = (lf.ang * Math.PI) / 180;
+        const ex = 100 + Math.sin(rad) * L;
+        const ey = anchorY - Math.cos(rad) * L * 0.7;
+        const cx1 = 100 + Math.sin(rad) * L * 0.4 + lf.x * 10 * p;
+        const cy1 = anchorY - Math.cos(rad) * L * 0.5 - 6;
+        return (
+          <path key={i}
+            d={`M100 ${anchorY} Q ${cx1} ${cy1} ${ex} ${ey} Q ${cx1 + lf.x * 6} ${cy1 + 8} 100 ${anchorY} Z`}
+            fill="url(#lf)" stroke="#2f7d55" strokeWidth="1" opacity={0.55 + p * 0.45}
+            filter={glow ? "url(#gl)" : undefined}
+            style={{ transition: "all .5s cubic-bezier(.2,1,.4,1)" }} />
+        );
+      })}
+      {showFlower && (
+        <g style={{ transition: "all .5s" }}>
+          {[0, 72, 144, 216, 288].map((a) => {
+            const r = (a * Math.PI) / 180;
+            return <ellipse key={a} cx={100 + Math.cos(r) * 9} cy={topY - 4 + Math.sin(r) * 9} rx="6" ry="9"
+              fill="#F0C398" stroke="#C97B54" strokeWidth="1" transform={`rotate(${a} ${100 + Math.cos(r) * 9} ${topY - 4 + Math.sin(r) * 9})`} />;
+          })}
+          <circle cx="100" cy={topY - 4} r="5" fill="#E8A24d" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+/* typewriter */
+function useTyped(text, speed = 42, start = true) {
+  const [out, setOut] = useState("");
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!start) return;
+    setOut(""); setDone(false);
+    let i = 0;
+    const id = setInterval(() => {
+      i++; setOut(text.slice(0, i));
+      if (i >= text.length) { clearInterval(id); setDone(true); }
+    }, speed);
+    return () => clearInterval(id);
+  }, [text, start, speed]);
+  return { out, done };
+}
+
+/* ---------- data ---------- */
+const HABITS = [
+  { e: "☀️", k: "Light", v: "Bright, indirect", d: "Loves a sheer-curtained window" },
+  { e: "💧", k: "Water", v: "When top 5cm dry", d: "Roughly weekly in summer" },
+  { e: "💦", k: "Humidity", v: "50–60%", d: "Tropical at heart" },
+  { e: "🌡️", k: "Warmth", v: "18–27°C", d: "Keep away from cold drafts" },
+];
+const FAMILY = [
+  { cn: "Swiss Cheese Vine", bn: "M. adansonii", tag: "Smaller leaves, more holes — great on a shelf." },
+  { cn: "Split-leaf Philodendron", bn: "Thaumatophyllum", tag: "Often confused with Monstera. Bushier habit." },
+  { cn: "Rhaphidophora", bn: "R. tetrasperma", tag: "The “mini Monstera” — fast and forgiving." },
+];
+
+function App() {
+  const [device, setDevice] = useState("mobile");
+  const web = device === "web";
+  return (
+    <div className="flora">
+      <style>{CSS}</style>
+      <div className="stage">
+        <div className="toolbar">
+          <span className="bm">Flora <b>prototype</b></span>
+          <div className="seg">
+            <button className={!web ? "on" : ""} onClick={() => setDevice("mobile")}>Mobile app</button>
+            <button className={web ? "on" : ""} onClick={() => setDevice("web")}>Website</button>
+          </div>
+        </div>
+        {web ? (
+          <div className="web">
+            <div className="bar"><span className="dot" /><span className="dot" /><span className="dot" /><span className="url">flora.plant/scan</span></div>
+            <div className="screen"><Product device="web" /></div>
+          </div>
+        ) : (
+          <div className="phone"><div className="notch" /><div className="screen"><Product device="mobile" /></div></div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function greetingWord() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function Product({ device }) {
+  const web = device === "web";
+  const [stage, setStage] = useState("greet"); // greet | scan | result
+  const NICK = "leaf whisperer";
+  const line = `${greetingWord()}, ${NICK}. `;
+  const line2 = "Let's see how your plant is doing today.";
+  const g1 = useTyped(line, 40, stage === "greet");
+  const g2 = useTyped(line2, 34, g1.done);
+
+  return stage === "greet" ? (
+    <div className="dark">
+      <div className="aurora"><i /><i /><i /></div>
+      <div className="greet">
+        <div className="time mono">{greetingWord().replace("Good ", "")} · Flora</div>
+        <h1 className="ser">
+          {g1.out}<span className="em">{g2.out}</span>
+          {!g2.done && <span className="caret" />}
+        </h1>
+        <div className={`cta-row ${g2.done ? "show" : ""}`}>
+          <button className="btn glow" onClick={() => setStage("scan")}>📷 Show me your plant</button>
+          <button className="btn ghost-d" onClick={() => setStage("scan")}>Type instead</button>
+        </div>
+      </div>
+    </div>
+  ) : stage === "scan" ? (
+    <ScanFlow web={web} onBack={() => setStage("greet")} />
+  ) : null;
+}
+
+function ScanFlow({ web, onBack }) {
+  const [phase, setPhase] = useState("aim"); // aim | scanning | done
+  useEffect(() => {
+    if (phase === "scanning") { const t = setTimeout(() => setPhase("done"), 2400); return () => clearTimeout(t); }
+  }, [phase]);
+
+  if (phase === "done") return <Result web={web} onRescan={() => setPhase("aim")} onHome={onBack} />;
+
+  return (
+    <div className="dark">
+      <div className="aurora"><i /><i /><i /></div>
+      <div className="view">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <button className="back d" onClick={onBack}>← Back</button>
+          <span className="mono" style={{ fontSize: 11, color: "var(--mist)" }}>{web ? "Webcam" : "Rear camera"}</span>
+        </div>
+        <div className="finder">
+          <div className="corners"><span /><span /><span /><span /></div>
+          <div style={{ width: web ? 260 : 210 }}><Plant growth={0.7} glow /></div>
+          {phase === "aim" && <div className="hint mono">Center your plant in the frame</div>}
+          {phase === "scanning" && <><div className="scanline" /><div className="hud">◐ Analyzing leaf structure…</div></>}
+        </div>
+        <div style={{ marginTop: 16, display: "flex", justifyContent: "center" }}>
+          {phase === "aim"
+            ? <button className="btn glow" onClick={() => setPhase("scanning")}>Scan my plant</button>
+            : <span className="mono" style={{ color: "var(--glow-2)", fontSize: 12 }}>Reading your plant…</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Result({ web, onRescan, onHome }) {
+  const [growth, setGrowth] = useState(35);
+  const assist = useTyped("Your Monstera looks strong overall — vibrant new growth and firm stems. Just one thing to watch on the lower leaves.", 22);
+
+  const g = growth / 100;
+  const ages = ["Today", "1 week", "1 month", "6 months", "2 years"];
+  const ageLabel = ages[Math.min(ages.length - 1, Math.floor((growth / 100) * ages.length))];
+
+  const bubbles = web
+    ? [
+        { p: "Leaves", r: "Vibrant, good turgor ✓", x: "60%", y: "24%", warn: false, px: "54%", py: "30%" },
+        { p: "Lower leaf", r: "One yellowing — watch watering", x: "12%", y: "58%", warn: true, px: "34%", py: "62%" },
+        { p: "Stem", r: "Firm & upright ✓", x: "62%", y: "70%", warn: false, px: "52%", py: "72%" },
+      ]
+    : [
+        { p: "Leaves", r: "Vibrant ✓", x: "52%", y: "16%", warn: false, px: "52%", py: "26%" },
+        { p: "Lower leaf", r: "One yellowing", x: "6%", y: "52%", warn: true, px: "34%", py: "60%" },
+        { p: "Stem", r: "Firm ✓", x: "58%", y: "70%", warn: false, px: "52%", py: "74%" },
+      ];
+
+  return (
+    <div>
+      {/* scanned subject + bubbles (dark) */}
+      <div className="dark">
+        <div className="aurora"><i /><i /><i /></div>
+        <div className="view" style={{ paddingBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <button className="back d" onClick={onHome}>← Home</button>
+            <button className="back d" onClick={onRescan}>Rescan ↺</button>
+          </div>
+          <div className="finder" style={{ minHeight: web ? 380 : 320 }}>
+            <div className="corners"><span /><span /><span /><span /></div>
+            <div style={{ width: web ? 240 : 190 }}><Plant growth={0.7} glow /></div>
+            {bubbles.map((b, i) => (
+              <React.Fragment key={i}>
+                <span className={`dotpin ${b.warn ? "warn" : ""}`} style={{ left: b.px, top: b.py, animationDelay: `${i * 0.15}s` }} />
+                <div className={`bub ${b.warn ? "warn" : ""}`} style={{ left: b.x, top: b.y, animationDelay: `${0.2 + i * 0.18}s` }}>
+                  <div className="p">{b.p}</div><div className="r">{b.r}</div>
+                </div>
+              </React.Fragment>
+            ))}
+          </div>
+          <div className="idcard">
+            <div>
+              <div className="nm ser">Monstera</div>
+              <div className="bn ser">Monstera deliciosa · juvenile</div>
+            </div>
+            <div className="cf"><div className="n ser">94%</div><div className="l mono">match</div></div>
+          </div>
+          <div className="assist">
+            <span className="orb" />
+            <span className="msg ser">{assist.out}{!assist.done && <span className="caret" />}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* verdict + care (light) */}
+      <div className="read">
+        <div className="pad">
+          <div className="verdict care">
+            <span className="tag">Worth a small fix</span>
+            <h3 className="ser">A touch too much water</h3>
+            <p>The single yellowing lower leaf, paired with soil that's still damp, is an early overwatering sign. Easy to correct before it spreads.</p>
+            <ul className="fix">
+              <li><span className="n mono">01</span><span>Let the top 5 cm of soil dry fully before the next water.</span></li>
+              <li><span className="n mono">02</span><span>Empty the saucer so roots never sit in water.</span></li>
+              <li><span className="n mono">03</span><span>Remove the yellow leaf — it won't turn back green.</span></li>
+            </ul>
+          </div>
+
+          {/* habits */}
+          <div style={{ marginTop: 28 }}>
+            <span className="kicker mono">How it likes to live</span>
+            <h2 className="h2 ser">Monstera, at a glance</h2>
+            <p className="lead">A tropical climber from the rainforests of Central America. In the wild it scrambles up trees toward the light — indoors, it wants the same: brightness, warmth, and a chance to dry out between drinks.</p>
+            <div className="habits">
+              {HABITS.map((h, i) => (
+                <div className="hcard" key={i}>
+                  <div className="e">{h.e}</div><div className="k mono">{h.k}</div>
+                  <div className="v ser">{h.v}</div><div className="d">{h.d}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* family */}
+          <div style={{ marginTop: 30 }}>
+            <span className="kicker mono">Meet the family</span>
+            <h2 className="h2 ser">Plants you might mix it up with</h2>
+            <div className="fam">
+              {FAMILY.map((f, i) => (
+                <div className="fcard" key={i}>
+                  <div className="top"><div style={{ width: 90 }}><Plant growth={0.45 + i * 0.15} /></div></div>
+                  <div className="info">
+                    <div className="cn ser">{f.cn}</div>
+                    <div className="bn ser">{f.bn}</div>
+                    <div className="tagline">{f.tag}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* growth timeline — signature AR moment */}
+          <div style={{ marginTop: 30 }}>
+            <span className="kicker mono">See it grow</span>
+            <h2 className="h2 ser">Fast-forward your Monstera</h2>
+            <p className="lead">Drag through time to preview how it'll fill out with good care — then place it in your room in AR.</p>
+            <div className="grow">
+              <div className="gstage">
+                <span className="arhint mono">◉ AR preview</span>
+                <span className="agebadge ser">{ageLabel}</span>
+                <div style={{ width: web ? 240 : 200 }}>
+                  <Plant growth={0.25 + g * 0.75} flower glow />
+                </div>
+              </div>
+              <div className="ctrl">
+                <div className="ticks">
+                  {ages.map((a, i) => (
+                    <span key={a} className={i === Math.min(ages.length - 1, Math.floor((growth / 100) * ages.length)) ? "" : ""}>
+                      {i === Math.min(ages.length - 1, Math.floor((growth / 100) * ages.length)) ? <b>{a}</b> : a}
+                    </span>
+                  ))}
+                </div>
+                <input className="rng" type="range" min="0" max="100" value={growth} onChange={(e) => setGrowth(+e.target.value)} />
+                <div style={{ marginTop: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button className="btn glow">Place in my room →</button>
+                  <button className="btn ghost-d" onClick={onHome}>Save to my plants</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="foot mono">FLORA · YOUR PLANT, IN CONVERSATION · PROTOTYPE — analysis is a best-guess demo</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
